@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Form Book — Horse Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #0f0e0c; --cream: #f5f0e8; --tan: #d9cdb8;
+    --accent: #b8420a; --accent2: #1a5c3a;
+    --muted: #6b6456; --card: #faf7f2; --border: #c9bfae;
+  }
+  body { background: var(--cream); color: var(--ink); font-family: 'IBM Plex Mono', monospace; min-height: 100vh; }
+  .app { max-width: 800px; margin: 0 auto; padding: 32px 20px 80px; }
+  .masthead { border-top: 4px solid var(--ink); border-bottom: 2px solid var(--ink); padding: 18px 0 14px; margin-bottom: 32px; display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+  .masthead h1 { font-family: 'Playfair Display', serif; font-size: clamp(26px, 5vw, 44px); font-weight: 900; letter-spacing: -1px; line-height: 1; }
+  .masthead span { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+  .section-head { font-family: 'Playfair Display', serif; font-size: 20px; font-weight: 700; border-bottom: 1.5px solid var(--border); padding-bottom: 8px; margin-bottom: 16px; margin-top: 32px; }
+  .add-row { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .add-row input { flex: 1; min-width: 180px; }
+  input { background: var(--card); border: 1.5px solid var(--border); border-radius: 3px; padding: 9px 12px; font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--ink); outline: none; transition: border-color 0.15s; }
+  input:focus { border-color: var(--accent); }
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; border: 2px solid var(--ink); background: var(--ink); color: var(--cream); font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; border-radius: 2px; transition: background 0.13s, border-color 0.13s; white-space: nowrap; }
+  .btn:hover { background: var(--accent); border-color: var(--accent); }
+  .btn.outline { background: transparent; color: var(--ink); }
+  .btn.outline:hover { background: var(--ink); color: var(--cream); }
+  .btn.danger { background: transparent; border-color: #c0392b; color: #c0392b; padding: 5px 10px; font-size: 11px; }
+  .btn.danger:hover { background: #c0392b; color: white; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .horse-list { display: flex; flex-direction: column; gap: 10px; }
+  .horse-card { background: var(--card); border: 1.5px solid var(--border); border-radius: 3px; padding: 14px 16px; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .horse-name { font-family: 'Playfair Display', serif; font-size: 17px; font-weight: 700; }
+  .horse-meta { font-size: 11px; color: var(--muted); margin-top: 3px; }
+  .badge { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 3px 8px; border-radius: 2px; flex-shrink: 0; }
+  .badge-watching { background: #e8f4ed; color: var(--accent2); border: 1px solid #a8d5b5; }
+  .status-bar { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--muted); margin-bottom: 24px; flex-wrap: wrap; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #2d9e5f; flex-shrink: 0; }
+  .dot.amber { background: #d97b0a; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+  .empty { font-size: 12px; color: var(--muted); font-style: italic; padding: 16px 0; }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--ink); color: var(--cream); padding: 12px 18px; border-radius: 3px; font-size: 12px; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 999; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="masthead">
+    <h1>The Form Book</h1>
+    <span>Early Entry Tracker</span>
+  </div>
+  <div class="status-bar">
+    <span class="dot" id="serverDot"></span>
+    <span id="serverStatus">Connected</span>
+    <span>·</span>
+    <span class="dot amber" id="pushDot"></span>
+    <span id="pushStatus">Push: checking…</span>
+  </div>
+  <div class="actions">
+    <button class="btn outline" id="enablePushBtn">🔔 Enable Push Notifications</button>
+    <button class="btn outline" id="pollBtn">▶ Poll Now</button>
+  </div>
+  <div class="section-head">Watchlist</div>
+  <div class="add-row">
+    <input type="text" id="horseInput" placeholder="Horse name e.g. Constitution Hill" />
+    <button class="btn" id="addBtn">+ Add</button>
+  </div>
+  <div class="horse-list" id="horseList">
+    <div class="empty">Loading…</div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+  let vapidKey = null;
+
+  async function loadHorses() {
+    try {
+      const res = await fetch("/horses");
+      const horses = await res.json();
+      renderHorses(horses);
+    } catch (e) {
+      document.getElementById("horseList").innerHTML = '<div class="empty">Could not reach server.</div>';
+    }
+  }
+
+  function renderHorses(horses) {
+    const el = document.getElementById("horseList");
+    if (!horses.length) {
+      el.innerHTML = '<div class="empty">No horses tracked yet. Add one above.</div>';
+      return;
+    }
+    el.innerHTML = horses.map(h => `
+      <div class="horse-card">
+        <div>
+          <div class="horse-name">${esc(h.name)}</div>
+          <div class="horse-meta">
+            Added ${new Date(h.addedAt).toLocaleDateString("en-IE")}
+            ${h.lastChecked ? ` · Last checked ${new Date(h.lastChecked).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}` : ""}
+            ${h.notifiedRaceIds?.length ? ` · ${h.notifiedRaceIds.length} alert(s) sent` : ""}
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+          <span class="badge badge-watching">Watching</span>
+          <button class="btn danger" onclick="removeHorse(${h.id})">Remove</button>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  document.getElementById("addBtn").addEventListener("click", addHorse);
+  document.getElementById("horseInput").addEventListener("keydown", e => { if (e.key === "Enter") addHorse(); });
+
+  async function addHorse() {
+    const input = document.getElementById("horseInput");
+    const name = input.value.trim();
+    if (!name) return;
+    const res = await fetch("/horses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (res.ok) {
+      input.value = "";
+      toast(`Added ${name}`);
+      loadHorses();
+    } else {
+      const data = await res.json();
+      toast(data.error || "Error adding horse");
+    }
+  }
+
+  async function removeHorse(id) {
+    await fetch(`/horses/${id}`, { method: "DELETE" });
+    toast("Removed");
+    loadHorses();
+  }
+
+  document.getElementById("pollBtn").addEventListener("click", async () => {
+    const btn = document.getElementById("pollBtn");
+    btn.disabled = true;
+    btn.textContent = "Polling…";
+    await fetch("/poll", { method: "POST" });
+    toast("Poll triggered — check server logs");
+    setTimeout(() => { btn.disabled = false; btn.textContent = "▶ Poll Now"; loadHorses(); }, 3000);
+  });
+
+  async function initPush() {
+    const statusEl = document.getElementById("pushStatus");
+    const dotEl = document.getElementById("pushDot");
+    const btn = document.getElementById("enablePushBtn");
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      statusEl.textContent = "Push: not supported in this browser";
+      return;
+    }
+    try {
+      const res = await fetch("/vapid-public-key");
+      if (res.ok) { const d = await res.json(); vapidKey = d.key; }
+    } catch {}
+    if (Notification.permission === "granted") {
+      statusEl.textContent = "Push: enabled ✓";
+      dotEl.className = "dot";
+      btn.style.display = "none";
+      return;
+    }
+    btn.addEventListener("click", async () => {
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { toast("Push permission denied"); return; }
+      if (vapidKey) {
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        });
+        await fetch("/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(sub),
+        });
+      }
+      statusEl.textContent = "Push: enabled ✓";
+      dotEl.className = "dot";
+      btn.style.display = "none";
+      toast("🔔 Push notifications enabled!");
+    });
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+  }
+
+  function toast(msg) {
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.classList.add("show");
+    setTimeout(() => el.classList.remove("show"), 3000);
+  }
+
+  function esc(s) {
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  loadHorses();
+  initPush();
+</script>
+</body>
+</html>
