@@ -4,7 +4,8 @@
   "description": "Horse entry tracker with push notifications",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node horse-tracker-server/src/index.js"
+
   },
   "engines": {
     "node": ">=18"
